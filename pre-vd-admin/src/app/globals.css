@@ -706,11 +706,6 @@ td {
   min-width: 300px;
 }
 
-.th-reclassify,
-.td-reclassify {
-  min-width: 120px;
-}
-
 .th-raw-view,
 .td-raw-view {
   min-width: 96px;
@@ -718,8 +713,7 @@ td {
   text-align: center;
 }
 
-.td-edit,
-.td-reclassify {
+.td-edit {
   white-space: normal;
 }
 
@@ -729,8 +723,7 @@ td {
   gap: 8px;
 }
 
-.edit-stack button,
-.td-reclassify button {
+.edit-stack button {
   width: 100%;
 }
 
@@ -757,10 +750,6 @@ td {
   width: 78px;
   height: 28px;
   font-size: 11px;
-}
-
-.td-reclassify {
-  vertical-align: middle;
 }
 
 .rationale {

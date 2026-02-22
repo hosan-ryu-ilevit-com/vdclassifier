@@ -475,8 +475,8 @@ export default function AdminDashboard() {
     if (!analysis) return;
     const label = editLabelById[row.id];
     const reason = editReasonById[row.id]?.trim() ?? "";
-    if (!label || !reason) {
-      setError("수정 사유를 입력해주세요.");
+    if (!label) {
+      setError("수정할 라벨을 선택해주세요.");
       return;
     }
 
@@ -489,61 +489,13 @@ export default function AdminDashboard() {
           {
             previousLabel: current.finalLabel,
             nextLabel: label,
-            reason,
+            reason: reason || "사유 미입력",
             editedAt: new Date().toISOString(),
           },
           ...(current.manualEdits ?? []),
         ],
       };
     });
-
-    persistAnalysis({
-      ...analysis,
-      rows: nextRows,
-      report: buildReport(nextRows),
-    });
-  }
-
-  async function reclassify(row: SurveyResponseItem) {
-    if (!analysis) return;
-    const response = await fetch("/api/classify-row", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        rowIndex: row.rowIndex,
-        rawData: row.rawData,
-        rawEntries: row.rawEntries ?? [],
-        criteria,
-        coreValue,
-        abuserCriteria,
-        discoveryCriteria,
-        sampleCount,
-      }),
-    });
-    const json = await response.json();
-    if (!response.ok) {
-      setError(json.error ?? "재분류 실패");
-      return;
-    }
-
-    const nextRows = analysis.rows.map((current) =>
-      current.id === row.id
-        ? {
-            ...current,
-            modelLabel: json.row.modelLabel,
-            finalLabel: json.row.finalLabel,
-            confidence: json.row.confidence,
-            rationale: json.row.rationale,
-            warningSignals: json.row.warningSignals ?? [],
-            isAbuser: Boolean(json.row.isAbuser),
-            isDiscoveryType: Boolean(json.row.isDiscoveryType),
-            usedColumns: json.row.usedColumns ?? [],
-            coreValueUnderstood: json.row.coreValueUnderstood ?? null,
-            coreValueReason: json.row.coreValueReason ?? "",
-            normalizedData: json.row.normalizedData ?? current.normalizedData,
-          }
-        : current,
-    );
 
     persistAnalysis({
       ...analysis,
@@ -579,7 +531,7 @@ export default function AdminDashboard() {
   const isStep3Done = coreValue.trim().length > 0;
   const isStep4Done = true;
   const canRunClassification = isStep1Done && isStep2Done && isStep3Done;
-  const totalTableColumns = 2 + BASE_COLUMNS.length + 2;
+  const totalTableColumns = 2 + BASE_COLUMNS.length + 1;
 
   return (
     <div className="page">
@@ -884,7 +836,6 @@ export default function AdminDashboard() {
                 </th>
               ))}
               <th className="th-edit">수정</th>
-              <th className="th-reclassify">재분류</th>
             </tr>
           </thead>
           <tbody>
@@ -983,7 +934,7 @@ export default function AdminDashboard() {
                         ))}
                       </select>
                       <input
-                        placeholder="수정 사유"
+                        placeholder="수정 사유 (선택)"
                         value={editReasonById[row.id] ?? ""}
                         onChange={(e) =>
                           setEditReasonById((prev) => ({
@@ -994,9 +945,6 @@ export default function AdminDashboard() {
                       />
                       <button onClick={() => saveManualEdit(row)}>저장</button>
                     </div>
-                  </td>
-                  <td className="td-reclassify">
-                    <button onClick={() => reclassify(row)}>재분류</button>
                   </td>
                 </tr>
                 {expandedRawRowId === row.id && (
