@@ -840,6 +840,10 @@ td {
   word-break: break-word;
 }
 
+.row-vd td {
+  background: #e9f1ff;
+}
+
 .row-prevd td {
   background: #edf9f1;
 }

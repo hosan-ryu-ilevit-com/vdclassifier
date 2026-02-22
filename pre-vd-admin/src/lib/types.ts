@@ -1,6 +1,7 @@
-export type ClassificationLabel = "PRE_VD" | "VSD" | "NSD" | "ND";
+export type ClassificationLabel = "VD" | "PRE_VD" | "VSD" | "NSD" | "ND";
 
 export const LABEL_OPTIONS: ClassificationLabel[] = [
+  "VD",
   "PRE_VD",
   "VSD",
   "NSD",
@@ -8,6 +9,7 @@ export const LABEL_OPTIONS: ClassificationLabel[] = [
 ];
 
 export const LABEL_VIEW: Record<ClassificationLabel, string> = {
+  VD: "VD",
   PRE_VD: "Pre-VD",
   VSD: "VSD",
   NSD: "NSD",

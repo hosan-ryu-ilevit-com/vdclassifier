@@ -69,8 +69,9 @@ const DEFAULT_ABUSER_CRITERIA =
 const DEFAULT_DISCOVERY_CRITERIA =
   "구매 타이밍 응답에서 구매 계획이 없고 '구체적인 구매 계획은 없지만 정보가 궁금했습니다'에 해당하면 디스커버리형으로 분류한다.";
 
-const LABEL_ORDER: ClassificationLabel[] = ["PRE_VD", "VSD", "NSD", "ND"];
+const LABEL_ORDER: ClassificationLabel[] = ["VD", "PRE_VD", "VSD", "NSD", "ND"];
 const LABEL_VIEW: Record<ClassificationLabel, string> = {
+  VD: "VD",
   PRE_VD: "Pre-VD",
   VSD: "VSD",
   NSD: "NSD",
@@ -102,6 +103,7 @@ const BASE_COLUMNS: Array<{ id: string; label: string; className: string }> = [
 ];
 
 function labelRowClass(label: ClassificationLabel): string {
+  if (label === "VD") return "row-vd";
   if (label === "PRE_VD") return "row-prevd";
   if (label === "VSD") return "row-vsd";
   return "row-nsd";
@@ -187,6 +189,7 @@ export default function AdminDashboard() {
   function buildReport(rows: SurveyResponseItem[]): ReportPayload {
     const total = rows.length;
     const byLabel: Record<string, { count: number; percent: number }> = {
+      VD: { count: 0, percent: 0 },
       PRE_VD: { count: 0, percent: 0 },
       VSD: { count: 0, percent: 0 },
       NSD: { count: 0, percent: 0 },

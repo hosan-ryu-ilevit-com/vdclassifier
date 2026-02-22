@@ -12,7 +12,8 @@ const API_BASE =
   "https://generativelanguage.googleapis.com/v1beta";
 
 const SYSTEM_CRITERIA = `
-당신은 설문 응답을 아래 4개 분류로 판정하는 심사자다.
+당신은 설문 응답을 아래 5개 분류로 판정하는 심사자다.
+- VD: PRE_VD 조건을 충족하면서, 이 서비스에서 추천받은 상품을 이미 구매 완료한 경우
 - PRE_VD: 서비스 가치 공감 + 구매의향/행동이 강하고, 유지되면 아쉽다는 신호가 강함
 - VSD: 전반 긍정이나 확신 부족/조건부 신호가 섞임
 - NSD: 유용성은 일부 인정하나 신뢰/효용/구매 연결이 약함
@@ -60,7 +61,7 @@ type GeminiPayload = {
   };
 };
 
-const tieBreakerOrder: ClassificationLabel[] = ["ND", "NSD", "VSD", "PRE_VD"];
+const tieBreakerOrder: ClassificationLabel[] = ["ND", "NSD", "VSD", "PRE_VD", "VD"];
 
 function extractJsonObject(text: string): string {
   const first = text.indexOf("{");
@@ -75,6 +76,7 @@ function extractJsonObject(text: string): string {
 function toLabel(value: string): ClassificationLabel {
   const normalized = value.trim().toUpperCase().replaceAll("-", "_");
 
+  if (normalized === "VD") return "VD";
   if (normalized === "PRE_VD") return "PRE_VD";
   if (normalized === "VSD") return "VSD";
   if (normalized === "NSD") return "NSD";
@@ -115,7 +117,7 @@ ${JSON.stringify(
 
 출력 스키마:
 {
-  "label": "PRE_VD | VSD | NSD | ND",
+  "label": "VD | PRE_VD | VSD | NSD | ND",
   "rationale": "최종 분류 판단 근거(핵심 근거 1~3문장)",
   "warningSignals": ["선택적 경고 시그널"],
   "usedColumns": ["판단에 실제 사용한 원본 헤더명"],
@@ -290,6 +292,24 @@ function applyBusinessRules(
   // NSD/ND should not happen when core value is clearly understood.
   if (coreValueUnderstood === true && (label === "NSD" || label === "ND")) {
     return "VSD";
+  }
+
+  const purchaseIntentCombined = `${normalizedData.purchaseIntentCombined ?? ""}`.replace(
+    /\s+/g,
+    " ",
+  );
+  const purchaseIntent = `${normalizedData.purchaseIntent ?? ""}`.replace(/\s+/g, " ");
+  const buyReason = `${normalizedData.buyReason ?? ""}`.replace(/\s+/g, " ");
+  const hasPurchasedSignal = /(이미|벌써|구매\s*완료|결제\s*완료|구매했|샀)/.test(
+    `${purchaseIntentCombined} ${purchaseIntent} ${buyReason}`.toLowerCase(),
+  );
+
+  // VD is only valid for PRE_VD-equivalent respondents with explicit completed-purchase signal.
+  if (label === "VD") {
+    return hasPurchasedSignal ? "VD" : "PRE_VD";
+  }
+  if (label === "PRE_VD" && hasPurchasedSignal) {
+    return "VD";
   }
 
   return label;
