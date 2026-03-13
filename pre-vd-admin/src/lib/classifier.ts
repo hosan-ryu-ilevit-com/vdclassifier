@@ -417,17 +417,9 @@ export async function classifyWithSelfConsistency(
   sampleCount = 3,
 ): Promise<ClassifierResult> {
   const start = Date.now();
-  const votes: Array<
-    ClassifierVote & {
-      normalizedData: ClassifierResult["normalizedData"];
-      usedColumns: string[];
-    }
-  > = [];
-
-  for (let i = 0; i < sampleCount; i++) {
-    const vote = await singleVote(input, i, sampleCount);
-    votes.push(vote);
-  }
+  const votes = await Promise.all(
+    Array.from({ length: sampleCount }, (_, i) => singleVote(input, i, sampleCount)),
+  );
 
   const majority = selectByMajority(votes);
   const selectedVote =

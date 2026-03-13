@@ -51,10 +51,14 @@ type AnalysisResult = {
 type StreamCompletePayload = {
   uploadId: string;
   filename: string;
+  sampleCount?: number;
   rowConcurrency?: number;
   totalRows: number;
   processedRows: number;
-  rows: SurveyResponseItem[];
+};
+
+type StreamRowPayload = {
+  row: SurveyResponseItem;
 };
 
 const KEY_CRITERIA = "classificationCriteria";
@@ -373,6 +377,8 @@ export default function AdminDashboard() {
       const decoder = new TextDecoder();
       let buffer = "";
       let completedPayloadRaw: unknown = null;
+      let streamedTotalRows = 0;
+      const streamedRowsByIndex = new Map<number, SurveyResponseItem>();
 
       const processLine = (line: string) => {
         if (!line.trim()) return;
@@ -381,6 +387,7 @@ export default function AdminDashboard() {
 
         if (type === "start") {
           const totalRows = Number(event.totalRows ?? 0);
+          streamedTotalRows = totalRows;
           setProgress({
             active: true,
             processedRows: 0,
@@ -403,6 +410,14 @@ export default function AdminDashboard() {
             percent,
             message: `${processedRows}/${totalRows} 처리 중 (${currentLabel})`,
           });
+          return;
+        }
+
+        if (type === "row") {
+          const payload = event as unknown as StreamRowPayload;
+          if (payload.row) {
+            streamedRowsByIndex.set(payload.row.rowIndex, payload.row);
+          }
           return;
         }
 
@@ -437,9 +452,26 @@ export default function AdminDashboard() {
 
       if (buffer.trim()) processLine(buffer.trim());
 
-      const completedPayload = completedPayloadRaw as StreamCompletePayload | null;
+      let completedPayload = completedPayloadRaw as StreamCompletePayload | null;
+      const streamedRows = [...streamedRowsByIndex.values()].sort(
+        (a, b) => a.rowIndex - b.rowIndex,
+      );
+
+      if (!completedPayload && streamedTotalRows > 0 && streamedRows.length === streamedTotalRows) {
+        completedPayload = {
+          uploadId: crypto.randomUUID(),
+          filename: uploadFile.name,
+          sampleCount,
+          rowConcurrency,
+          totalRows: streamedTotalRows,
+          processedRows: streamedRows.length,
+        };
+      }
+
       if (!completedPayload) {
-        throw new Error("분류 완료 이벤트를 받지 못했습니다.");
+        throw new Error(
+          `분류 완료 이벤트를 받지 못했습니다. (${streamedRows.length}/${streamedTotalRows || "?"}개 행 수신)`,
+        );
       }
 
       const nextAnalysis: AnalysisResult = {
@@ -454,13 +486,13 @@ export default function AdminDashboard() {
         rowConcurrency: completedPayload.rowConcurrency ?? rowConcurrency,
         totalRows: completedPayload.totalRows,
         processedRows: completedPayload.processedRows,
-        rows: completedPayload.rows,
-        report: buildReport(completedPayload.rows),
+        rows: streamedRows,
+        report: buildReport(streamedRows),
       };
       persistAnalysis(nextAnalysis);
 
       const labels: Record<string, ClassificationLabel> = {};
-      for (const row of completedPayload.rows) labels[row.id] = row.finalLabel;
+      for (const row of streamedRows) labels[row.id] = row.finalLabel;
       setEditLabelById(labels);
       setEditReasonById({});
     } catch (e) {
@@ -594,7 +626,7 @@ export default function AdminDashboard() {
             onChange={(e) => setRowConcurrency(clampNumberInput(e.target.value, 4, 1, 10))}
           />
           <p className="field-help">
-            병렬 개수가 클수록 빨리 끝나지만 정확도는 감소할 수 있습니다.
+            병렬 개수가 클수록 빨리 끝나지만 API 한도와 타임아웃 위험은 커질 수 있습니다.
           </p>
           <div className="recommended-ops">
             <div className="recommended-ops-title">권장 운영값</div>

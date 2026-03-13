@@ -10,6 +10,8 @@ import { normalizeSurveyRow } from "@/lib/normalize";
 
 const MAX_SYNC_ROWS = Number(process.env.MAX_SYNC_ROWS ?? 120);
 
+export const maxDuration = 300;
+
 function cleanRawRecord(raw: Record<string, unknown>): Record<string, string> {
   const cleaned: Record<string, string> = {};
   for (const [key, value] of Object.entries(raw)) {
@@ -123,73 +125,84 @@ export async function POST(request: NextRequest) {
             rowConcurrency,
           });
 
-          const classifiedRows: Array<Record<string, unknown>> = new Array(rows.length);
+          const uploadId = crypto.randomUUID();
           let nextIndex = 0;
           let processedRows = 0;
+          let stopRequested = false;
+          let firstError: unknown = null;
 
           const worker = async () => {
             while (true) {
+              if (stopRequested) return;
               const currentIndex = nextIndex;
               nextIndex += 1;
               if (currentIndex >= rows.length) return;
 
-              const { rawData, rawEntries } = rows[currentIndex];
-              const normalized = normalizeSurveyRow(rawData);
-              const result = await classifyWithSelfConsistency(
-                {
+              try {
+                const { rawData, rawEntries } = rows[currentIndex];
+                const normalized = normalizeSurveyRow(rawData);
+                const result = await classifyWithSelfConsistency(
+                  {
+                    rowIndex: currentIndex + 1,
+                    normalized,
+                    rawData,
+                    rawEntries,
+                    userCriteria: userCriteria || undefined,
+                    coreValue: coreValue || undefined,
+                    abuserCriteria: abuserCriteria || undefined,
+                    discoveryCriteria: discoveryCriteria || undefined,
+                  },
+                  sampleCount,
+                );
+
+                if (stopRequested) return;
+
+                const row = {
+                  id: crypto.randomUUID(),
                   rowIndex: currentIndex + 1,
-                  normalized,
                   rawData,
                   rawEntries,
-                  userCriteria: userCriteria || undefined,
-                  coreValue: coreValue || undefined,
-                  abuserCriteria: abuserCriteria || undefined,
-                  discoveryCriteria: discoveryCriteria || undefined,
-                },
-                sampleCount,
-              );
+                  normalizedData: result.normalizedData,
+                  modelLabel: result.finalLabel,
+                  finalLabel: result.finalLabel,
+                  confidence: result.confidence,
+                  rationale: result.rationale,
+                  warningSignals: result.warningSignals,
+                  isAbuser: result.isAbuser,
+                  isDiscoveryType: result.isDiscoveryType,
+                  usedColumns: result.usedColumns,
+                  coreValueUnderstood: result.coreValueUnderstood,
+                  coreValueReason: result.coreValueReason,
+                  votes: result.votes,
+                  runMeta: {
+                    modelName: getModelName(),
+                    promptVersion: getPromptVersion(),
+                    sampleCount,
+                    rowConcurrency,
+                    temperature: sampleCount > 1 ? 0.35 : 0.1,
+                    latencyMs: result.latencyMs,
+                  },
+                };
 
-              classifiedRows[currentIndex] = {
-                id: crypto.randomUUID(),
-                rowIndex: currentIndex + 1,
-                rawData,
-                rawEntries,
-                normalizedData: result.normalizedData,
-                modelLabel: result.finalLabel,
-                finalLabel: result.finalLabel,
-                confidence: result.confidence,
-                rationale: result.rationale,
-                warningSignals: result.warningSignals,
-                isAbuser: result.isAbuser,
-                isDiscoveryType: result.isDiscoveryType,
-                usedColumns: result.usedColumns,
-                coreValueUnderstood: result.coreValueUnderstood,
-                coreValueReason: result.coreValueReason,
-                votes: result.votes,
-                runMeta: {
-                  modelName: getModelName(),
-                  promptVersion: getPromptVersion(),
-                  sampleCount,
-                  rowConcurrency,
-                  temperature: sampleCount > 1 ? 0.35 : 0.1,
-                  systemCriteria: getSystemCriteria(),
-                  userCriteria: userCriteria || null,
-                  coreValue: coreValue || null,
-                  abuserCriteria: abuserCriteria || null,
-                  discoveryCriteria: discoveryCriteria || null,
-                  latencyMs: result.latencyMs,
-                },
-              };
+                writeEvent({
+                  type: "row",
+                  row,
+                });
 
-              processedRows += 1;
-              writeEvent({
-                type: "progress",
-                processedRows,
-                totalRows: rows.length,
-                percent: Number(((processedRows / rows.length) * 100).toFixed(1)),
-                rowIndex: currentIndex + 1,
-                currentLabel: result.finalLabel,
-              });
+                processedRows += 1;
+                writeEvent({
+                  type: "progress",
+                  processedRows,
+                  totalRows: rows.length,
+                  percent: Number(((processedRows / rows.length) * 100).toFixed(1)),
+                  rowIndex: currentIndex + 1,
+                  currentLabel: result.finalLabel,
+                });
+              } catch (error) {
+                stopRequested = true;
+                firstError = error;
+                return;
+              }
             }
           };
 
@@ -200,17 +213,29 @@ export async function POST(request: NextRequest) {
             ),
           );
 
+          if (firstError) {
+            throw firstError;
+          }
+
           writeEvent({
             type: "complete",
             payload: {
-              uploadId: crypto.randomUUID(),
+              uploadId,
               filename: file.name,
-              modelName: getModelName(),
               rowConcurrency,
-              headers: rawHeaders,
+              sampleCount,
               totalRows: rows.length,
-              processedRows: rows.length,
-              rows: classifiedRows,
+              processedRows,
+              meta: {
+                modelName: getModelName(),
+                promptVersion: getPromptVersion(),
+                temperature: sampleCount > 1 ? 0.35 : 0.1,
+                systemCriteria: getSystemCriteria(),
+                userCriteria: userCriteria || null,
+                coreValue: coreValue || null,
+                abuserCriteria: abuserCriteria || null,
+                discoveryCriteria: discoveryCriteria || null,
+              },
             },
           });
         } catch (error) {
